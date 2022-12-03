@@ -1,0 +1,68 @@
+# kubernetes/backstage.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backstage
+  namespace: backstage
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backstage
+  template:
+    metadata:
+      labels:
+        app: backstage
+    spec:
+      serviceAccountName: backstage
+      volumes:
+      - name: backstage-config-volume
+        configMap:
+          # Provide the name of the ConfigMap containing the files you want
+          # to add to the container
+          name: backstage-config
+      containers:
+        - name: backstage
+          volumeMounts:
+          - name: backstage-config-volume
+            mountPath: /etc/config
+          image: 004889159502.dkr.ecr.us-east-1.amazonaws.com/demo-backstage:a036cd0c92dbb770a35dd8f91be8896e300447f2
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 7007
+          env:
+          - name: AUTH_GITHUB_CLIENT_ID
+            value: 327b9b92c03528057e6b
+          - name: AUTH_GITHUB_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                name: github-secrets
+                key: GITHUB_SECRET
+          - name: POSTGRES_HOST
+            valueFrom:
+              configMapKeyRef:
+                name: backstageio-conn-cm
+                key: "backstage.backstageio-host"
+          - name: POSTGRES_PORT
+            valueFrom:
+              configMapKeyRef:
+                name: backstageio-conn-cm
+                key: "backstage.backstageio-port"
+          - name: POSTGRES_USER
+            valueFrom:
+              configMapKeyRef:
+                name: backstageio-conn-cm
+                key: "backstage.backstageio-user"
+          - name: POSTGRES_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: "backstageio-password"
+                key: password
+          - name: GITHUB_TOKEN
+            valueFrom:
+              secretKeyRef:
+                name: backstage-secrets
+                key: GITHUB_TOKEN
+
+

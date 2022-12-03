@@ -1,0 +1,31 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    kubernetes.io/ingress.class: alb
+    external-dns.alpha.kubernetes.io/alias: "true"
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: cafe
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:us-east-1:004889159502:certificate/b68381cc-f4c0-4aa3-b686-a719a02ee873
+  labels:
+    app: jaeger
+    app.kubernetes.io/component: query-ingress
+    app.kubernetes.io/instance: simplest
+    app.kubernetes.io/managed-by: jaeger-operator
+    app.kubernetes.io/name: simplest-query
+    app.kubernetes.io/part-of: jaeger
+  name: simplest-query
+  namespace: observability
+spec:
+  rules:
+  - host: test.techsdemo.com
+    http:
+      paths:
+      - backend:
+          service:
+            name: simplest-query
+            port:
+              number: 16686
+        path: /*
+        pathType: ImplementationSpecific

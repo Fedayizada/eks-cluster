@@ -1,0 +1,8 @@
+enableSqsTerminationDraining: true
+queueURL: "<specify your queue URl>"
+awsRegion: "<specify your region>"
+serviceAccount:
+  create: false
+  name: nth # <-- adjust to your service account
+checkASGTagBeforeDraining: false # <-- set to false as instances do not belong to any ASG
+enableSpotInterruptionDraining: true

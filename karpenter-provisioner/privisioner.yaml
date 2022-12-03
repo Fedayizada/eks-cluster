@@ -1,0 +1,41 @@
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: default
+spec:
+  providerRef:                     
+    name: default
+  consolidation:
+    enabled: true 
+  kubeletConfiguration:
+    containerRuntime: containerd
+  requirements:
+  - key: node.kubernetes.io/instance-type
+    operator: NotIn
+    values: 
+    - t3.micro
+    - t3.small
+    - t3.medium
+    - t3.large
+    - t3.xlarge
+  - key: karpenter.sh/capacity-type
+    operator: In
+    values:
+    - spot
+  - key: kubernetes.io/arch
+    operator: In
+    values:
+    - amd64
+---
+apiVersion: karpenter.k8s.aws/v1alpha1
+kind: AWSNodeTemplate
+metadata:
+  name: default
+spec:
+  tags:
+    auto-delete: "no"
+  instanceProfile: KarpenterNodeInstanceProfile-dev-eks-cluster
+  securityGroupSelector:
+    Name: dev-eks-node-sg
+  subnetSelector:
+    Name: '*private*'

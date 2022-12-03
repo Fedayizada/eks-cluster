@@ -1,0 +1,17 @@
+apiVersion: rds.services.k8s.aws/v1alpha1
+kind: DBInstance
+metadata:
+  name: backstageio
+  namespace: backstage
+spec:
+  allocatedStorage: 20
+  dbInstanceClass: db.t4g.micro
+  dbInstanceIdentifier: "backstageio"
+  engine: postgres
+  engineVersion: "14"
+  masterUsername: "postgres"
+  dbSubnetGroupName: "default-vpc-000e2c059a0784364"
+  masterUserPassword:
+    namespace: backstage
+    name: "backstageio-password"
+    key: password

@@ -1,0 +1,299 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: adot-collector-conf
+  namespace: prometheus
+  labels:
+    app: aws-adot
+    component: adot-collector-conf
+data:
+  adot-collector-config: |
+    receivers:
+      prometheus:
+        config:
+          global:
+            scrape_interval: 15s
+            scrape_timeout: 10s
+
+          scrape_configs:
+          - job_name: 'kubernetes-pods'
+            sample_limit: 10000
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - action: keep
+              source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              regex: true
+            - action: replace
+              source_labels: [__meta_kubernetes_namespace]
+              target_label: Namespace
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_name]
+              target_label: pod_name
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_container_name]
+              target_label: container_name
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_controller_name]
+              target_label: pod_controller_name
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_controller_kind]
+              target_label: pod_controller_kind
+            - action: replace
+              source_labels: [__meta_kubernetes_pod_phase]
+              target_label: pod_phase
+
+            metric_relabel_configs:
+            - action: drop
+              source_labels: [__name__]
+              regex: 'go_gc_duration_seconds.*'
+
+          - job_name: 'kubernetes-apiservers'
+
+            kubernetes_sd_configs:
+              - role: endpoints
+
+           
+            scheme: https
+
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+            
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+                action: keep
+                regex: default;kubernetes;https
+
+          - job_name: 'kubernetes-nodes'
+            sample_limit: 10000
+            # Default to scraping over https. If required, just disable this or change to
+            # `http`.
+            scheme: https
+            
+            kubernetes_sd_configs:
+            - role: node
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+          - job_name: 'kubernetes-cadvisor'
+            sample_limit: 10000
+            # Default to scraping over https. If required, just disable this or change to
+            # `http`.
+            scheme: https
+            metrics_path: /metrics/cadvisor
+            
+            kubernetes_sd_configs:
+            - role: node
+            tls_config:
+              ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+              insecure_skip_verify: true
+            bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+            
+            relabel_configs:
+              - action: labelmap
+                regex: __meta_kubernetes_node_label_(.+)
+          - job_name: 'kubernetes-service-endpoints'
+
+            kubernetes_sd_configs:
+              - role: endpoints
+
+            relabel_configs:
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+                action: keep
+                regex: true
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape_slow]
+                action: drop
+                regex: true
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+                action: replace
+                target_label: __scheme__
+                regex: (https?)
+              - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+                action: replace
+                target_label: __metrics_path__
+                regex: (.+)
+              - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+                action: replace
+                target_label: __address__
+                regex: ([^:]+)(?::\d+)?;(\d+)
+                replacement: $1:$2
+              - action: labelmap
+                regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)
+                replacement: __param_$1
+              - action: labelmap
+                regex: __meta_kubernetes_service_label_(.+)
+              - source_labels: [__meta_kubernetes_namespace]
+                action: replace
+                target_label: namespace
+              - source_labels: [__meta_kubernetes_service_name]
+                action: replace
+                target_label: service
+              - source_labels: [__meta_kubernetes_pod_node_name]
+                action: replace
+                target_label: node
+    exporters:
+      awsprometheusremotewrite:
+        # replace this with your endpoint
+        endpoint: "https://aps-workspaces.us-east-1.amazonaws.com/workspaces/ws-96241d2c-8d20-4416-b853-c304bef2dbff/api/v1/remote_write"
+        # replace this with your region
+        aws_auth:
+          region: "us-east-1"
+          service: "aps"
+      logging:
+        loglevel: error
+
+    extensions:
+      health_check:
+      pprof:
+        endpoint: :1888
+      zpages:
+        endpoint: :55679
+
+    service:
+      extensions: [pprof, zpages, health_check]
+      pipelines:
+        metrics:
+          receivers: [prometheus]
+          exporters: [logging, awsprometheusremotewrite]
+---
+# create adot-col service account and role binding
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: amp-iamproxy-service-account
+  namespace: prometheus
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::004889159502:role/EKS_CloudWatch
+
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adotcol-admin-role
+rules:
+  - apiGroups: [""]
+    resources:
+    - nodes
+    - nodes/proxy
+    - nodes/metrics
+    - services
+    - endpoints
+    - pods
+    - ingresses
+    - configmaps
+    verbs: ["get", "list", "watch"]
+  - apiGroups:
+    - extensions
+    - networking.k8s.io
+    resources:
+    - ingresses
+    - ingresses/status
+    verbs: ["get", "list", "watch"]
+  - nonResourceURLs: ["/metrics"]
+    verbs: ["get"]
+
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: adotcol-admin-role-binding
+subjects:
+  - kind: ServiceAccount
+    name: amp-iamproxy-service-account
+    namespace: prometheus
+roleRef:
+  kind: ClusterRole
+  name: adotcol-admin-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: adot-collector
+  namespace: prometheus
+  labels:
+    app: aws-adot
+    component: adot-collector
+spec:
+  ports:
+  - name: metrics # Default endpoint for querying metrics.
+    port: 8888
+  selector:
+    component: adot-collector
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: adot-collector
+  namespace: prometheus
+  labels:
+    app: aws-adot
+    component: adot-collector
+spec:
+  selector:
+    matchLabels:
+      app: aws-adot
+      component: adot-collector
+  minReadySeconds: 5
+  template:
+    metadata:
+      labels:
+        app: aws-adot
+        component: adot-collector
+    spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+      serviceAccountName: amp-iamproxy-service-account
+      containers:
+      - command:
+          - "/awscollector"
+          - "--config=/conf/adot-collector-config.yaml"
+        image: public.ecr.aws/aws-observability/aws-otel-collector:latest
+        name: adot-collector
+        resources:
+          limits:
+            cpu: 1
+            memory: 2Gi
+          requests:
+            cpu: 200m
+            memory: 400Mi
+        ports:
+        - containerPort: 8888  # Default endpoint for querying metrics.
+        volumeMounts:
+        - name: adot-collector-config-vol
+          mountPath: /conf
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 13133 # Health Check extension default port.
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 13133 # Health Check extension default port.
+      volumes:
+        - configMap:
+            name: adot-collector-conf
+            items:
+              - key: adot-collector-config
+                path: adot-collector-config.yaml
+          name: adot-collector-config-vol
+---

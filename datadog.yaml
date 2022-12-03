@@ -1,0 +1,19 @@
+name: Download AWS CLI version 2
+schemaVersion: 1.0
+phases:
+  - name: build
+    steps:
+      - name: InstalISS
+        action: ExecutePowerShell
+        inputs:
+          commands:
+            - Install-WindowsFeature -Name Web-Server -IncludeAllSubFeature -IncludeManagementTools 
+            
+            
+  - name: validate
+      steps:
+        - name: InstalISS
+          action: ExecutePowerShell
+          inputs:
+            commands:
+              - if ((Get-WindowsFeature -Name Web-Server).Installed) {Write-Host "IIS is installed"} else  {throw "IIS not Installed" }

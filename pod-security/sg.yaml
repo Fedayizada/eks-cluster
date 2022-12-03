@@ -1,0 +1,12 @@
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: my-security-group-policy
+  namespace: default
+spec:
+  podSelector: 
+    matchLabels:
+      app: tea
+  securityGroups:
+    groupIds:
+      - sg-0aaa2e7cde8df8ea9

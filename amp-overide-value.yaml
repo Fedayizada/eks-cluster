@@ -1,0 +1,46 @@
+## The following is a set of default values for prometheus server helm chart which enable remoteWrite to AMP
+## For the rest of prometheus helm chart values see: https://github.com/prometheus-community/helm-charts/blob/main/charts/prometheus/values.yaml
+##
+serviceAccounts:
+  ## Disable alert manager roles
+  ##
+  server:
+        annotations:
+          eks.amazonaws.com/role-arn: "arn:aws:iam::004889159502:role/EKS_CloudWatch"
+        name: "pm-service-account"
+  alertmanager:
+    create: false
+
+  ## Disable pushgateway
+  ##
+  pushgateway:
+    create: false
+
+server:
+  remoteWrite:
+    - url: "https://aps-workspaces.us-east-1.amazonaws.com/workspaces/ws-96241d2c-8d20-4416-b853-c304bef2dbff/api/v1/remote_write"
+      sigv4:
+        region: "us-east-1"
+      queue_config:
+        max_samples_per_send: 1000
+        max_shards: 200
+        capacity: 2500
+
+  ## Use a statefulset instead of a deployment for resiliency
+  ##
+  statefulSet:
+    enabled: true
+
+  ## Store blocks locally for short time period only
+  ##
+  retention: 1h
+  
+## Disable alert manager
+##
+alertmanager:
+  enabled: false
+
+## Disable pushgateway
+##
+pushgateway:
+  enabled: false

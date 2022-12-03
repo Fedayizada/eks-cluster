@@ -1,0 +1,59 @@
+#
+# OpenTelemetry Collector configuration
+# Metrics pipeline with Prometheus Receiver and Prometheus Remote Write Exporter sending metrics to Amazon Managed Prometheus
+#
+apiVersion: opentelemetry.io/v1alpha1
+kind: OpenTelemetryCollector
+metadata:
+  name: my-collector-amp
+spec:
+  mode: deployment
+  serviceAccount: adot-collector
+  podAnnotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/port: '8888'
+  config: "extensions:\n  sigv4auth:\n    region: us-east-1\n    service: \"aps\"\n    #magic___^_^___line\nreceivers:\n  #\n  # Scrape configuration for the Prometheus Receiver\n  # This is the same configuration used when Prometheus is installed using the community Helm chart\n  #     \n  prometheus:\n    config:\n      global:\n        scrape_interval: 15s\n        scrape_timeout: 10s\n        #magic___^_^___line\n      scrape_configs:\n      - job_name: kubernetes-apiservers\n        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token\n        kubernetes_sd_configs:\n        - role: endpoints\n        relabel_configs:\n        - action: keep\n          regex: default;kubernetes;https\n          source_labels:\n          - __meta_kubernetes_namespace\n          - __meta_kubernetes_service_name\n          - __meta_kubernetes_endpoint_port_name\n        scheme: https\n        tls_config:\n          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n          insecure_skip_verify: true\n          #magic___^_^___line\n      - job_name: kubernetes-nodes\n        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token\n        kubernetes_sd_configs:\n        - role: node\n        relabel_configs:\n        - action: labelmap\n          regex: __meta_kubernetes_node_label_(.+)\n        - replacement: kubernetes.default.svc:443\n          target_label: __address__\n        - regex: (.+)\n          replacement: /api/v1/nodes/$$1/proxy/metrics\n          source_labels:\n          - __meta_kubernetes_node_name\n          target_label: __metrics_path__\n        scheme: https\n        tls_config:\n          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n          insecure_skip_verify: true\n          #magic___^_^___line\n      - job_name: kubernetes-nodes-cadvisor\n        bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token\n        kubernetes_sd_configs:\n        - role: node\n        relabel_configs:\n        - action: labelmap\n          regex: __meta_kubernetes_node_label_(.+)\n        - replacement: kubernetes.default.svc:443\n          target_label: __address__\n        - regex: (.+)\n          replacement: /api/v1/nodes/$$1/proxy/metrics/cadvisor\n          source_labels:\n          - __meta_kubernetes_node_name\n          target_label: __metrics_path__\n        scheme: https\n        tls_config:\n          ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt\n          insecure_skip_verify: true\n          #magic___^_^___line\n      - job_name: kubernetes-service-endpoints\n        kubernetes_sd_configs:\n        - role: endpoints\n        relabel_configs:\n        - action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_scrape\n        - action: replace\n          regex: (https?)\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_scheme\n          target_label: __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_path\n          target_label: __metrics_path__\n        - action: replace\n          regex: ([^:]+)(?::\\d+)?;(\\d+)\n          replacement: $$1:$$2\n          source_labels:\n          - __address__\n          - __meta_kubernetes_service_annotation_prometheus_io_port\n          target_label: __address__\n        - action: labelmap\n          regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)\n          replacement: __param_$$1\n        - action: labelmap\n          regex: __meta_kubernetes_service_label_(.+)\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n          target_label: kubernetes_namespace\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_service_name\n          target_label: kubernetes_name\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_pod_node_name\n          target_label: kubernetes_node\n          #magic___^_^___line\n      - job_name: kubernetes-service-endpoints-slow\n        kubernetes_sd_configs:\n        - role: endpoints\n        relabel_configs:\n        - action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_scrape_slow\n        - action: replace\n          regex: (https?)\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_scheme\n          target_label: __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_path\n          target_label: __metrics_path__\n        - action: replace\n          regex: ([^:]+)(?::\\d+)?;(\\d+)\n          replacement: $$1:$$2\n          source_labels:\n          - __address__\n          - __meta_kubernetes_service_annotation_prometheus_io_port\n          target_label: __address__\n        - action: labelmap\n          regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)\n          replacement: __param_$$1\n        - action: labelmap\n          regex: __meta_kubernetes_service_label_(.+)\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n          target_label: kubernetes_namespace\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_service_name\n          target_label: kubernetes_name\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_pod_node_name\n          target_label: kubernetes_node\n        scrape_interval: 5m\n        scrape_timeout: 30s\n          #magic___^_^___line\n      - job_name: prometheus-pushgateway\n        kubernetes_sd_configs:\n        - role: service\n        relabel_configs:\n        - action: keep\n          regex: pushgateway\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_probe\n          #magic___^_^___line\n      - job_name: kubernetes-services\n        kubernetes_sd_configs:\n        - role: service\n        metrics_path: /probe\n        params:\n          module:\n          - http_2xx\n        relabel_configs:\n        - action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_service_annotation_prometheus_io_probe\n        - source_labels:\n          - __address__\n          target_label: __param_target\n        - replacement: blackbox\n          target_label: __address__\n        - source_labels:\n          - __param_target\n          target_label: instance\n        - action: labelmap\n          regex: __meta_kubernetes_service_label_(.+)\n        - source_labels:\n          - __meta_kubernetes_namespace\n          target_label: kubernetes_namespace\n        - source_labels:\n          - __meta_kubernetes_service_name\n          target_label: kubernetes_name\n          #magic___^_^___line\n      - job_name: kubernetes-pods\n        kubernetes_sd_configs:\n        - role: pod\n        relabel_configs:\n        - action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scrape\n        - action: replace\n          regex: (https?)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scheme\n          target_label: __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_path\n          target_label: __metrics_path__\n        - action: replace\n          regex: ([^:]+)(?::\\d+)?;(\\d+)\n          replacement: $$1:$$2\n          source_labels:\n          - __address__\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n          target_label: __address__\n        - action: labelmap\n          regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)\n          replacement: __param_$$1\n        - action: labelmap\n          regex: __meta_kubernetes_pod_label_(.+)\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n          target_label: kubernetes_namespace\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_pod_name\n          target_label: kubernetes_pod_name\n        - action: drop\n          regex: Pending|Succeeded|Failed|Completed\n          source_labels:\n          - __meta_kubernetes_pod_phase\n          #magic___^_^___line\n      - job_name: kubernetes-pods-slow\n        scrape_interval: 5m\n        scrape_timeout: 30s          \n        kubernetes_sd_configs:\n        - role: pod\n        relabel_configs:\n        - action: keep\n          regex: true\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scrape_slow\n        - action: replace\n          regex: (https?)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_scheme\n          target_label: __scheme__\n        - action: replace\n          regex: (.+)\n          source_labels:\n          - __meta_kubernetes_pod_annotation_prometheus_io_path\n          target_label: __metrics_path__\n        - action: replace\n          regex: ([^:]+)(?::\\d+)?;(\\d+)\n          replacement: $$1:$$2\n          source_labels:\n          - __address__\n          - __meta_kubernetes_pod_annotation_prometheus_io_port\n          target_label: __address__\n        - action: labelmap\n          regex: __meta_kubernetes_pod_annotation_prometheus_io_param_(.+)\n          replacement: __param_$1\n        - action: labelmap\n          regex: __meta_kubernetes_pod_label_(.+)\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_namespace\n          target_label: namespace\n        - action: replace\n          source_labels:\n          - __meta_kubernetes_pod_name\n          target_label: pod\n        - action: drop\n          regex: Pending|Succeeded|Failed|Completed\n          source_labels:\n          - __meta_kubernetes_pod_phase\n                            #magic___^_^___line\nprocessors:\n  batch/metrics:\n    timeout: 60s         \n                            #magic___^_^___line\nexporters:\n  prometheusremotewrite:\n    endpoint: https://aps-workspaces.us-east-1.amazonaws.com/workspaces/ws-2a16f45a-7735-4168-9522-5dfa46c00bef/api/v1/remote_write\n    auth:\n      authenticator: sigv4auth\n                            #magic___^_^___line\nservice:\n  extensions: [sigv4auth]\n  pipelines:   \n    metrics:\n      receivers: [prometheus]\n      processors: [batch/metrics]\n      exporters: [prometheusremotewrite]\n                            #magic___^_^___line\n"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-prometheus-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - nodes
+  - nodes/proxy
+  - services
+  - endpoints
+  - pods
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - extensions
+  resources:
+  - ingresses
+  verbs:
+  - get
+  - list
+  - watch
+- nonResourceURLs:
+  - /metrics
+  verbs:
+  - get
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-prometheus-role-binding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-prometheus-role
+subjects:
+- kind: ServiceAccount
+  name: adot-collector
+  namespace: default

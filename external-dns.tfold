@@ -1,0 +1,167 @@
+# IAM policy for external-dns role to manage route53 zones
+resource "aws_iam_policy" "external-dns" {
+  name = "K8SExternalDNS-IAMPolicy-${data.aws_region.eks.name}"
+	policy = <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets"
+      ],
+      "Resource": [
+        "arn:aws:route53:::hostedzone/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ListHostedZones",
+        "route53:ListResourceRecordSets"
+      ],
+      "Resource": [
+        "*"
+      ]
+    }
+  ]
+}
+EOF
+}
+
+# Create IAM Role for External DNS Pod
+resource "aws_iam_role" "k8s-external-dns-role" {
+	name = "k8s-external-dns-${data.aws_region.eks.name}"
+	assume_role_policy = templatefile(
+      "trust.json", 
+      { OIDC_ARN = aws_iam_openid_connect_provider.dev-eks.arn, OIDC_URL = replace(aws_iam_openid_connect_provider.dev-eks.url, "https://", ""),
+       NAMESPACE = "kube-system", SA_NAME = "external-dns" })
+}
+
+#attach IAM policy to IAM Role for External DNS
+resource "aws_iam_role_policy_attachment" "external-dns-policy-attach" {
+  role       = aws_iam_role.k8s-external-dns-role.name
+  policy_arn = aws_iam_policy.external-dns.arn
+}
+# create K8S Service account and annotate with IAM Role for External DNS
+resource "kubernetes_service_account" "external-dns" {
+    automount_service_account_token = true
+  metadata {
+    name = "external-dns"
+    namespace = "kube-system"
+    
+    annotations = {
+      "eks.amazonaws.com/role-arn" = aws_iam_role.k8s-external-dns-role.arn
+    }
+  }
+
+}
+
+# Create K8S RBAC Cluster Role 
+locals {
+  dns_role_name = "external-dns"
+}
+resource "kubernetes_cluster_role" "external-dns" {
+    depends_on = [ aws_eks_cluster.dev-eks ]
+    metadata {
+        name = local.dns_role_name
+        labels = {
+        "app" = "external-dns"
+        }
+    }
+    rule {
+        api_groups = [ "" ]
+        resources= ["services","endpoints","pods"]
+        verbs = ["get","watch","list"]
+    }
+    rule {
+		api_groups = ["extensions","networking.k8s.io"]
+        resources =  ["ingresses"]
+        verbs =  ["get","watch","list"]
+	}
+    rule {
+        api_groups = [ "" ]
+        resources = ["nodes"]
+        verbs = ["list","watch"]
+    }
+  
+}
+
+resource "kubernetes_cluster_role_binding" "external-dns" {
+	metadata {
+		name = local.dns_role_name
+		labels = {
+
+            "app" = "external-dns"
+    }
+	}
+	role_ref {
+		api_group = "rbac.authorization.k8s.io"
+		kind = "ClusterRole"
+		name = kubernetes_cluster_role.external-dns.metadata[0].name
+	}
+	subject {
+		kind = "ServiceAccount"
+		name = kubernetes_service_account.external-dns.metadata[0].name
+		namespace = kubernetes_service_account.external-dns.metadata[0].namespace
+	}
+	
+}
+
+# deployment for externnal-dns
+
+resource "kubernetes_deployment" "external-dns" {
+	depends_on = [ aws_eks_node_group.mng-node-dev-arm]
+  metadata {
+    name = "external-dns"
+    namespace = "kube-system"
+    labels = {
+      "app" = "external-dns"
+    }
+  }
+  spec {
+    replicas = 1
+    selector {
+      match_labels = {
+        "app" = "external-dns"
+      }
+    }
+    template {
+      metadata {
+        labels = {
+          "app" = "external-dns"
+        }
+      }
+			spec {
+				automount_service_account_token = true
+				service_account_name = kubernetes_service_account.external-dns.metadata[0].name
+				container {
+					image = "k8s.gcr.io/external-dns/external-dns:v0.7.6"
+					name = "external-dns"
+			
+					resources {
+						limits {
+							cpu = "100m"
+							memory = "300Mi"
+						}
+						requests {
+							cpu = "100m"
+							memory = "300Mi"
+						}
+					
+					}
+                    args = [ "--source=service","--source=ingress","--provider=aws",
+                    "--aws-zone-type=public", "--registry=txt","--txt-owner-id=my-hostedzone-identifier"]
+					
+					
+					image_pull_policy = "Always"
+				}
+				security_context {
+                  fs_group = "65534" 
+                }
+				
+
+			}
+    }
+  }
+}
